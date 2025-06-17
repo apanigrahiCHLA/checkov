@@ -1,4 +1,4 @@
-name: Code Review and Link Detection
+name: Find URLs in Codebase
 
 
 
@@ -18,7 +18,7 @@ on:
 
 jobs:
 
-  code-review:
+  find-urls:
 
     runs-on: ubuntu-latest
 
@@ -30,274 +30,126 @@ jobs:
 
       uses: actions/checkout@v4
 
-      with:
-
-        fetch-depth: 0
 
 
-
-    - name: Find all links in codebase
-
-      id: find-links
+    - name: Find all URLs
 
       run: |
 
-        echo "## 🔍 Found Links in Codebase" >> $GITHUB_STEP_SUMMARY
+        echo "# 🔍 URLs Found in Codebase" >> $GITHUB_STEP_SUMMARY
 
         echo "" >> $GITHUB_STEP_SUMMARY
 
         
 
-        # Find HTTP/HTTPS/www links in all files
+        # Create CSV report
 
-        echo "### HTTP/HTTPS Links:" >> $GITHUB_STEP_SUMMARY
-
-        grep -r -n -E "https?://[^\s\"'<>]+" . --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.github || echo "No HTTP/HTTPS links found" >> $GITHUB_STEP_SUMMARY
+        echo "File,Line,URL,Type" > urls_report.csv
 
         
 
-        echo "" >> $GITHUB_STEP_SUMMARY
+        # Find HTTP/HTTPS URLs
 
-        echo "### WWW Links:" >> $GITHUB_STEP_SUMMARY
-
-        grep -r -n -E "www\.[^\s\"'<>]+" . --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.github || echo "No www links found" >> $GITHUB_STEP_SUMMARY
-
-        
-
-        # Create detailed report
-
-        echo "## 📊 Detailed Link Analysis" >> $GITHUB_STEP_SUMMARY
+        echo "## HTTP/HTTPS URLs:" >> $GITHUB_STEP_SUMMARY
 
         echo "" >> $GITHUB_STEP_SUMMARY
 
         
 
-        # Count total links
+        grep -r -n -E "https?://[^\s\"'<>)\]};,]+" . \
 
-        TOTAL_HTTP=$(grep -r -E "https?://[^\s\"'<>]+" . --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.github | wc -l || echo "0")
+          --exclude-dir=.git \
 
-        TOTAL_WWW=$(grep -r -E "www\.[^\s\"'<>]+" . --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.github | wc -l || echo "0")
+          --exclude-dir=node_modules \
 
-        
+          --exclude-dir=.github \
 
-        echo "- **Total HTTP/HTTPS links found:** $TOTAL_HTTP" >> $GITHUB_STEP_SUMMARY
+          --exclude-dir=target \
 
-        echo "- **Total WWW links found:** $TOTAL_WWW" >> $GITHUB_STEP_SUMMARY
+          --exclude-dir=build \
 
-        echo "- **Total links:** $((TOTAL_HTTP + TOTAL_WWW))" >> $GITHUB_STEP_SUMMARY
+          --exclude-dir=dist \
 
+          --exclude="*.min.js" \
 
+          --exclude="*.map" | while IFS=: read -r file line content; do
 
-    - name: Code Quality Check
+          url=$(echo "$content" | grep -oE "https?://[^\s\"'<>)\]};,]+")
 
-      run: |
+          echo "$file,$line,$url,HTTP/HTTPS" >> urls_report.csv
 
-        echo "" >> $GITHUB_STEP_SUMMARY
-
-        echo "## 🧪 Code Quality Metrics" >> $GITHUB_STEP_SUMMARY
-
-        echo "" >> $GITHUB_STEP_SUMMARY
-
-        
-
-        # Basic code metrics
-
-        TOTAL_FILES=$(find . -type f -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.java" -o -name "*.cpp" -o -name "*.c" -o -name "*.cs" -o -name "*.go" -o -name "*.rs" | grep -v node_modules | grep -v .git | wc -l)
-
-        TOTAL_LINES=$(find . -type f -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.java" -o -name "*.cpp" -o -name "*.c" -o -name "*.cs" -o -name "*.go" -o -name "*.rs" | grep -v node_modules | grep -v .git | xargs wc -l | tail -1 | awk '{print $1}' || echo "0")
-
-        
-
-        echo "- **Code files found:** $TOTAL_FILES" >> $GITHUB_STEP_SUMMARY
-
-        echo "- **Total lines of code:** $TOTAL_LINES" >> $GITHUB_STEP_SUMMARY
-
-
-
-    - name: Security Scan for Suspicious Links
-
-      run: |
-
-        echo "" >> $GITHUB_STEP_SUMMARY
-
-        echo "## 🛡️ Security Review" >> $GITHUB_STEP_SUMMARY
-
-        echo "" >> $GITHUB_STEP_SUMMARY
-
-        
-
-        # Check for potentially suspicious domains or patterns
-
-        SUSPICIOUS_PATTERNS=(
-
-          "bit\.ly"
-
-          "tinyurl"
-
-          "t\.co"
-
-          "localhost:[0-9]+"
-
-          "127\.0\.0\.1"
-
-          "192\.168\."
-
-          "10\.[0-9]+\.[0-9]+\.[0-9]+"
-
-        )
-
-        
-
-        for pattern in "${SUSPICIOUS_PATTERNS[@]}"; do
-
-          MATCHES=$(grep -r -E "$pattern" . --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.github | wc -l || echo "0")
-
-          if [ "$MATCHES" -gt 0 ]; then
-
-            echo "⚠️ Found $MATCHES matches for pattern: $pattern" >> $GITHUB_STEP_SUMMARY
-
-            grep -r -n -E "$pattern" . --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.github >> $GITHUB_STEP_SUMMARY || true
-
-          fi
+          echo "- \`$file:$line\` → $url" >> $GITHUB_STEP_SUMMARY
 
         done
 
+        
 
+        echo "" >> $GITHUB_STEP_SUMMARY
 
-    - name: Generate Link Report
+        echo "## WWW URLs:" >> $GITHUB_STEP_SUMMARY
 
-      run: |
-
-        # Create a detailed CSV report
-
-        echo "File,Line,Link,Type" > links_report.csv
+        echo "" >> $GITHUB_STEP_SUMMARY
 
         
 
-        # Add HTTP/HTTPS links
+        # Find www URLs
 
-        grep -r -n -E "https?://[^\s\"'<>]+" . --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.github | while IFS=: read -r file line content; do
+        grep -r -n -E "www\.[^\s\"'<>)\]};,]+" . \
 
-          link=$(echo "$content" | grep -oE "https?://[^\s\"'<>]+")
+          --exclude-dir=.git \
 
-          echo "$file,$line,$link,HTTP/HTTPS" >> links_report.csv
+          --exclude-dir=node_modules \
 
-        done || true
+          --exclude-dir=.github \
+
+          --exclude-dir=target \
+
+          --exclude-dir=build \
+
+          --exclude-dir=dist \
+
+          --exclude="*.min.js" \
+
+          --exclude="*.map" | while IFS=: read -r file line content; do
+
+          url=$(echo "$content" | grep -oE "www\.[^\s\"'<>)\]};,]+")
+
+          echo "$file,$line,$url,WWW" >> urls_report.csv
+
+          echo "- \`$file:$line\` → $url" >> $GITHUB_STEP_SUMMARY
+
+        done
 
         
 
-        # Add WWW links
+        # Count totals
 
-        grep -r -n -E "www\.[^\s\"'<>]+" . --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.github | while IFS=: read -r file line content; do
+        TOTAL_URLS=$(wc -l < urls_report.csv)
 
-          link=$(echo "$content" | grep -oE "www\.[^\s\"'<>]+")
-
-          echo "$file,$line,$link,WWW" >> links_report.csv
-
-        done || true
+        TOTAL_URLS=$((TOTAL_URLS - 1)) # Subtract header row
 
         
 
         echo "" >> $GITHUB_STEP_SUMMARY
 
-        echo "## 📋 Export Options" >> $GITHUB_STEP_SUMMARY
+        echo "## Summary" >> $GITHUB_STEP_SUMMARY
+
+        echo "**Total URLs found: $TOTAL_URLS**" >> $GITHUB_STEP_SUMMARY
 
         echo "" >> $GITHUB_STEP_SUMMARY
 
-        echo "A detailed CSV report has been generated as an artifact." >> $GITHUB_STEP_SUMMARY
+        echo "📥 Download the complete CSV report from the Actions artifacts below." >> $GITHUB_STEP_SUMMARY
 
 
 
-    - name: Upload Links Report
+    - name: Upload URL Report
 
       uses: actions/upload-artifact@v4
 
       with:
 
-        name: links-report
+        name: urls-report
 
-        path: links_report.csv
+        path: urls_report.csv
 
         retention-days: 30
-
-
-
-    - name: Comment on PR (if applicable)
-
-      if: github.event_name == 'pull_request'
-
-      uses: actions/github-script@v7
-
-      with:
-
-        script: |
-
-          const fs = require('fs');
-
-          
-
-          // Read the CSV file and create a summary
-
-          let summary = "## 🔗 Link Detection Report\n\n";
-
-          
-
-          try {
-
-            const csvContent = fs.readFileSync('links_report.csv', 'utf8');
-
-            const lines = csvContent.split('\n').filter(line => line.trim() !== '');
-
-            
-
-            if (lines.length > 1) {
-
-              summary += `Found ${lines.length - 1} links in the codebase.\n\n`;
-
-              summary += "### Sample Links:\n";
-
-              
-
-              // Show first 10 links as examples
-
-              for (let i = 1; i < Math.min(11, lines.length); i++) {
-
-                const [file, line, link, type] = lines[i].split(',');
-
-                summary += `- \`${file}:${line}\` - ${link} (${type})\n`;
-
-              }
-
-              
-
-              if (lines.length > 11) {
-
-                summary += `\n... and ${lines.length - 11} more links. Download the full report from the Actions artifacts.`;
-
-              }
-
-            } else {
-
-              summary += "No links found in the codebase.";
-
-            }
-
-          } catch (error) {
-
-            summary += "Error generating report summary.";
-
-          }
-
-          
-
-github.rest.issues.createComment({
-
-            issue_number: context.issue.number,
-
-            owner: context.repo.owner,
-
-            repo: context.repo.repo,
-
-            body: summary
-
-          });
